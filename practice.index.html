@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全球地理資訊系統 - 懸停感應版</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; font-family: "Microsoft JhengHei", sans-serif; }
+        #map { height: 100vh; width: 100%; }
+
+        /* 自定義彈出框樣式 (跟 Lidicity 風格一致) */
+        .custom-tooltip {
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid #3498db;
+            border-radius: 8px;
+            padding: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            pointer-events: none; /* 確保滑鼠不會被提示框擋住 */
+        }
+        .tooltip-content { width: 180px; text-align: center; }
+        .tooltip-content h3 { margin: 0 0 8px 0; color: #2c3e50; font-size: 18px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        .tooltip-content img { width: 100px; border: 1px solid #ddd; margin-bottom: 8px; border-radius: 3px; }
+        .tooltip-content p { margin: 3px 0; font-size: 13px; color: #555; text-align: left; }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 1. 初始化地圖
+        const map = L.map('map', {
+            center: [20, 0],
+            zoom: 3,
+            maxBounds: [[-90, -180], [90, 180]],
+            worldCopyJump: true
+        });
+
+        // 2. 衛星底圖
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
+
+        // 3. 預載國名翻譯 (防止抓不到中文)
+        const nameMap = { "Taiwan": "臺灣", "Japan": "日本", "China": "中國", "USA": "美國", "Russia": "俄羅斯", "France": "法國" };
+
+        // 4. 載入全球邊界並設定「碰到即顯示」
+        fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
+            .then(res => res.json())
+            .then(data => {
+                L.geoJSON(data, {
+                    style: {
+                        color: "white",
+                        weight: 1,
+                        fillColor: "#3498db",
+                        fillOpacity: 0.1
+                    },
+                    onEachFeature: function (feature, layer) {
+                        const engName = feature.properties.ADMIN || feature.properties.name;
+                        
+                        // 滑鼠移入：抓取資料並彈出
+                        layer.on('mouseover', async function (e) {
+                            // 高亮國家
+                            this.setStyle({ fillOpacity: 0.4, weight: 2, color: "#f1c40f" });
+
+                            try {
+                                // 快速抓取基本資料 (國旗、首都)
+                                const res = await fetch(`https://restcountries.com/v3.1/name/${encodeURIComponent(engName)}?fullText=true`);
+                                const cData = await res.json();
+                                const c = cData[0];
+                                const zhName = c.translations.zho ? c.translations.zho.common : engName;
+
+                                // 建立簡短介紹內容
+                                const content = `
+                                    <div class="tooltip-content">
+                                        <h3>${zhName}</h3>
+                                        <img src="${c.flags.png}">
+                                        <p><b>📍 首都：</b>${c.capital ? c.capital[0] : '無'}</p>
+                                        <p><b>👥 人口：</b>${c.population.toLocaleString()}</p>
+                                        <p style="color:#3498db; font-size:11px;">(點擊可看百科介紹)</p>
+                                    </div>
+                                `;
+
+                                // 綁定並開啟工具提示
+                                layer.bindTooltip(content, {
+                                    sticky: true, // 讓提示框跟著滑鼠跑
+                                    className: 'custom-tooltip',
+                                    opacity: 1,
+                                    direction: 'top'
+                                }).openTooltip();
+
+                            } catch (err) {
+                                layer.bindTooltip(engName).openTooltip();
+                            }
+                        });
+
+                        // 滑鼠移出：還原樣式
+                        layer.on('mouseout', function () {
+                            this.setStyle({ fillOpacity: 0.1, weight: 1, color: "white" });
+                        });
+
+                        // 點擊事件：保留跳轉功能
+                        layer.on('click', function () {
+                            window.open(`https://zh.wikipedia.org/wiki/${encodeURIComponent(engName)}`, '_blank');
+                        });
+                    }
+                }).addTo(map);
+            });
+    </script>
+</body>
+</html>
